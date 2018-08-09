@@ -52,12 +52,6 @@ object JDBCLoad {
       .map("stage", stageDetail)      
       .log()
 
-    // ensure table name appears correct
-    val tablePath = load.tableName.split("\\.")
-    if (tablePath.length != 3) {
-      throw new Exception(s"tableName should contain 3 components database.schema.table currently has ${tablePath.length} component(s).")    
-    }
-
     // force cache the table so that when write verification is performed any upstream calculations are not executed twice
     if (!spark.catalog.isCached(load.inputView)) {
       df.cache
@@ -78,6 +72,7 @@ object JDBCLoad {
     // execute a count query on target db to get intial count
     val targetPreCount = try {
       connection = DriverManager.getConnection(load.jdbcURL, connectionProperties)
+
       // check if table exists
       if (JdbcUtils.tableExists(connection, jdbcOptions)) {
         saveMode match {
@@ -146,6 +141,12 @@ object JDBCLoad {
         load.driver match {
           // switch to custom sqlserver bulkloader
           case _: com.microsoft.sqlserver.jdbc.SQLServerDriver if (load.bulkload.getOrElse(false)) => {      
+
+            // ensure table name appears correct
+            val tablePath = load.tableName.split("\\.")
+            if (tablePath.length != 3) {
+              throw new Exception(s"tableName should contain 3 components database.schema.table currently has ${tablePath.length} component(s).")    
+            }            
 
             // remove the "jdbc:" prefix
             val uri = new URI(load.jdbcURL.substring(5))

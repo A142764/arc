@@ -47,7 +47,10 @@ object DelimitedExtract {
           CloudUtils.setHadoopConfiguration(extract.authentication)
 
           try {
-            spark.read.options(options).csv(uri.toString)
+            // read using sparkContext textFile to allow automatic handling of Zip compression
+            val textFile = spark.sparkContext.textFile(uri.toString)
+
+            spark.read.options(options).csv(textFile.toDS)
           } catch {
             case e: AnalysisException if (e.getMessage == "Unable to infer schema for CSV. It must be specified manually.;") || (e.getMessage.contains("Path does not exist")) => 
               spark.emptyDataFrame
@@ -56,6 +59,9 @@ object DelimitedExtract {
         case Left(view) => spark.read.options(options).csv(spark.table(view).as[String])
       }         
     } catch { 
+      case e: org.apache.hadoop.mapred.InvalidInputException if (e.getMessage.contains("matches 0 files")) => {
+        spark.emptyDataFrame
+      }      
       case e: Exception => throw new Exception(e) with DetailException {
         override val detail = stageDetail          
       }    

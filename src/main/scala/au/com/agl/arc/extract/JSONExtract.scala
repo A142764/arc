@@ -49,6 +49,7 @@ object JSONExtract {
           CloudUtils.setHadoopConfiguration(extract.authentication)
           // spark does not cope well reading many small files into json directly from hadoop file systems
           // by reading first as text time drops by ~75%
+          // text also allows reading directly from .zip
           // this will not throw an error for empty directory (but will for missing directory)
           try {
             if (extract.settings.multiLine ) {
@@ -93,7 +94,7 @@ object JSONExtract {
               json              
             }
           } catch {
-            case e: org.apache.hadoop.mapred.InvalidInputException => {
+            case e: org.apache.hadoop.mapred.InvalidInputException if (e.getMessage.contains("matches 0 files")) => {
               spark.emptyDataFrame
             }
             case e: Exception => throw e

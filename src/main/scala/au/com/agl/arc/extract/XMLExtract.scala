@@ -4,6 +4,7 @@ import java.lang._
 import java.net.URI
 import scala.collection.JavaConverters._
 
+import com.databricks.spark.xml._
 import org.apache.spark.sql._
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
@@ -36,16 +37,43 @@ object XMLExtract {
       .map("stage", stageDetail)      
       .log()    
 
-    // the xml reader does not yet support loading from a string dataset
     CloudUtils.setHadoopConfiguration(extract.authentication)
+
     val df = try {
-      extract.cols match {
-        case Nil => spark.read.format("com.databricks.spark.xml").options(options).load(extract.input.toString) 
+      // read using sparkContext textFile to allow automatic handling of Zip compression
+
+      val oldDelimiter = spark.sparkContext.hadoopConfiguration.get("textinputformat.record.delimiter")
+      val newDelimiter = s"${0x0 : Char}"
+      // temporarily remove the delimiter so all the data is loaded as a single line
+      spark.sparkContext.hadoopConfiguration.set("textinputformat.record.delimiter", newDelimiter)      
+
+      val textFile = spark.sparkContext.textFile(extract.input.toString)
+      val xmlReader = new XmlReader
+
+      val xml = extract.cols match {
+        case Nil => {
+          extract.params.get("rowTag") match {
+            case Some(rowTag) => xmlReader.withRowTag(rowTag).xmlRdd(spark.sqlContext, textFile)
+            case None => xmlReader.xmlRdd(spark.sqlContext, textFile)
+          } 
+        }
         case cols => { 
           val schema = Extract.toStructType(cols)
-          spark.read.format("com.databricks.spark.xml").options(options).schema(schema).load(extract.input.toString) 
+          extract.params.get("rowTag") match {
+            case Some(rowTag) => xmlReader.withSchema(schema).withRowTag(rowTag).xmlRdd(spark.sqlContext, textFile)
+            case None => xmlReader.withSchema(schema).xmlRdd(spark.sqlContext, textFile)
+          }           
         }                
-      }      
+      }
+
+      // reset delimiter
+      if (oldDelimiter == null) {
+        spark.sparkContext.hadoopConfiguration.unset("textinputformat.record.delimiter")              
+      } else {
+        spark.sparkContext.hadoopConfiguration.set("textinputformat.record.delimiter", oldDelimiter)        
+      }
+
+      xml
     } catch {
       case e: org.apache.hadoop.mapreduce.lib.input.InvalidInputException if (e.getMessage.contains("matches 0 files")) => {
         spark.emptyDataFrame

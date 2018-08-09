@@ -30,6 +30,7 @@ class XMLExtractSuite extends FunSuite with BeforeAndAfter {
                   .builder()
                   .master("local[*]")
                   .config("spark.ui.port", "9999")
+                  .config("spark.driver.memory", "2g")
                   .appName("Spark ETL Test")
                   .getOrCreate()
     spark.sparkContext.setLogLevel("ERROR")
@@ -64,13 +65,15 @@ class XMLExtractSuite extends FunSuite with BeforeAndAfter {
         outputView=outputView,
         input=new URI(targetFile),
         authentication=None,
-        params=Map.empty,
+        params=Map("rowTag" -> "ROW"),
         persist=false,
         numPartitions=None,
         partitionBy=Nil,
         contiguousIndex=None
       )
     )
+
+    extractDataset.show(false)
 
     // test that the filename is correctly populated
     assert(extractDataset.filter($"_filename".contains(targetFile)).count != 0)    
